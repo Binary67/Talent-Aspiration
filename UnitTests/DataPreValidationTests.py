@@ -4,7 +4,10 @@ import unittest
 import pandas as Pandas
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-from DataPreValidation import ValidateInputDataframe  # noqa: E402
+from DataPreValidation import (  # noqa: E402
+    ValidateInputDataframe,
+    ValidateJobFunctionsList,
+)
 
 
 class DataPreValidationTests(unittest.TestCase):
@@ -71,6 +74,61 @@ class DataPreValidationTests(unittest.TestCase):
             Errors,
         )
 
+    def TestValidJobFunctionsList(self) -> None:
+        JobFunctionsList = [
+            "data engineering",
+            "Product Management",
+            "Product management",
+        ]
+        IsValid, NormalizedJobFunctions, Errors = ValidateJobFunctionsList(
+            JobFunctionsList
+        )
+        self.assertTrue(IsValid)
+        self.assertEqual(
+            NormalizedJobFunctions, ["Data Engineering", "Product Management"]
+        )
+        self.assertEqual(Errors, [])
+
+    def TestJobFunctionsListEmpty(self) -> None:
+        IsValid, NormalizedJobFunctions, Errors = ValidateJobFunctionsList([])
+        self.assertFalse(IsValid)
+        self.assertEqual(NormalizedJobFunctions, [])
+        self.assertIn(
+            "JobFunctionsList must contain between 1 and 200 items.", Errors
+        )
+
+    def TestJobFunctionTooLong(self) -> None:
+        LongName = "A" * 61
+        IsValid, NormalizedJobFunctions, Errors = ValidateJobFunctionsList(
+            [LongName]
+        )
+        self.assertFalse(IsValid)
+        self.assertEqual(NormalizedJobFunctions, [])
+        self.assertTrue(
+            any("exceeds 60 characters" in Error for Error in Errors)
+        )
+
+    def TestJobFunctionNotString(self) -> None:
+        IsValid, NormalizedJobFunctions, Errors = ValidateJobFunctionsList(
+            ["Valid", 123]
+        )
+        self.assertFalse(IsValid)
+        self.assertEqual(NormalizedJobFunctions, ["Valid"])
+        self.assertTrue(
+            any("must be a non-empty string" in Error for Error in Errors)
+        )
+
+    def TestJobFunctionsListTooMany(self) -> None:
+        JobFunctionsList = [f"Role{i}" for i in range(201)]
+        IsValid, NormalizedJobFunctions, Errors = ValidateJobFunctionsList(
+            JobFunctionsList
+        )
+        self.assertFalse(IsValid)
+        self.assertEqual(len(NormalizedJobFunctions), 201)
+        self.assertIn(
+            "JobFunctionsList must contain between 1 and 200 items.", Errors
+        )
+
 
 def LoadTests() -> unittest.TestSuite:
     Suite = unittest.TestSuite()
@@ -79,6 +137,11 @@ def LoadTests() -> unittest.TestSuite:
     Suite.addTest(DataPreValidationTests("TestEmptyTalentStatement"))
     Suite.addTest(DataPreValidationTests("TestRowLimitExceeded"))
     Suite.addTest(DataPreValidationTests("TestStaffIdNotString"))
+    Suite.addTest(DataPreValidationTests("TestValidJobFunctionsList"))
+    Suite.addTest(DataPreValidationTests("TestJobFunctionsListEmpty"))
+    Suite.addTest(DataPreValidationTests("TestJobFunctionTooLong"))
+    Suite.addTest(DataPreValidationTests("TestJobFunctionNotString"))
+    Suite.addTest(DataPreValidationTests("TestJobFunctionsListTooMany"))
     return Suite
 
 

@@ -1,5 +1,5 @@
 import pandas as Pandas
-from DataPreValidation import ValidateInputDataframe
+from DataPreValidation import ValidateInputDataframe, ValidateJobFunctionsList
 
 
 def Main() -> None:
@@ -15,6 +15,18 @@ def Main() -> None:
     IsValid, Errors = ValidateInputDataframe(InputTable)
     print(f"IsValid: {IsValid}")
     print(f"Errors: {Errors}")
+
+    JobFunctionsList = [
+        "data engineering",
+        "Product Management",
+        "Product management",
+    ]
+    JfIsValid, NormalizedJobFunctions, JfErrors = ValidateJobFunctionsList(
+        JobFunctionsList
+    )
+    print(f"JfIsValid: {JfIsValid}")
+    print(f"NormalizedJobFunctions: {NormalizedJobFunctions}")
+    print(f"JfErrors: {JfErrors}")
 
 
 if __name__ == "__main__":
