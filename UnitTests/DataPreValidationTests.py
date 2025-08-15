@@ -1,12 +1,15 @@
 import os
 import sys
+import types
 import unittest
+from unittest.mock import MagicMock, patch
 import pandas as Pandas
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from DataPreValidation import (  # noqa: E402
     ValidateInputDataframe,
     ValidateJobFunctionsList,
+    PreflightModels,
 )
 
 
@@ -129,6 +132,84 @@ class DataPreValidationTests(unittest.TestCase):
             "JobFunctionsList must contain between 1 and 200 items.", Errors
         )
 
+    def TestPreflightModelsSuccess(self) -> None:
+        GptConfig = {
+            "ApiKey": "Key",
+            "ModelName": "Model",
+            "MaxRequestsPerMinute": 60,
+        }
+        MockChat = MagicMock()
+        MockChat.create.return_value = {
+            "choices": [{"message": {"content": "{\"Ping\": \"Pong\"}"}}]
+        }
+        MockOpenAi = types.SimpleNamespace(ChatCompletion=MockChat)
+        MockModelInstance = MagicMock()
+        MockModelInstance.encode.return_value = [0.1]
+        MockSentence = MagicMock(return_value=MockModelInstance)
+        MockSt = types.SimpleNamespace(SentenceTransformer=MockSentence)
+        with patch.dict(
+            sys.modules,
+            {"openai": MockOpenAi, "sentence_transformers": MockSt},
+        ):
+            GptReady, EmbeddingModelReady, Errors = PreflightModels(
+                GptConfig, "all-MiniLM-L6-v2"
+            )
+        self.assertTrue(GptReady)
+        self.assertTrue(EmbeddingModelReady)
+        self.assertEqual(Errors, [])
+
+    def TestPreflightModelsGptFailure(self) -> None:
+        GptConfig = {
+            "ApiKey": "Key",
+            "ModelName": "Model",
+            "MaxRequestsPerMinute": 60,
+        }
+        MockChat = MagicMock()
+        MockChat.create.side_effect = Exception("Failure")
+        MockOpenAi = types.SimpleNamespace(ChatCompletion=MockChat)
+        MockModelInstance = MagicMock()
+        MockModelInstance.encode.return_value = [0.1]
+        MockSentence = MagicMock(return_value=MockModelInstance)
+        MockSt = types.SimpleNamespace(SentenceTransformer=MockSentence)
+        with patch.dict(
+            sys.modules,
+            {"openai": MockOpenAi, "sentence_transformers": MockSt},
+        ):
+            GptReady, EmbeddingModelReady, Errors = PreflightModels(
+                GptConfig, "all-MiniLM-L6-v2"
+            )
+        self.assertFalse(GptReady)
+        self.assertTrue(EmbeddingModelReady)
+        self.assertTrue(
+            any("Gpt connectivity failed" in Error for Error in Errors)
+        )
+
+    def TestPreflightModelsEmbeddingFailure(self) -> None:
+        GptConfig = {
+            "ApiKey": "Key",
+            "ModelName": "Model",
+            "MaxRequestsPerMinute": 60,
+        }
+        MockChat = MagicMock()
+        MockChat.create.return_value = {
+            "choices": [{"message": {"content": "{\"Ping\": \"Pong\"}"}}]
+        }
+        MockOpenAi = types.SimpleNamespace(ChatCompletion=MockChat)
+        MockSentence = MagicMock(side_effect=Exception("LoadError"))
+        MockSt = types.SimpleNamespace(SentenceTransformer=MockSentence)
+        with patch.dict(
+            sys.modules,
+            {"openai": MockOpenAi, "sentence_transformers": MockSt},
+        ):
+            GptReady, EmbeddingModelReady, Errors = PreflightModels(
+                GptConfig, "all-MiniLM-L6-v2"
+            )
+        self.assertTrue(GptReady)
+        self.assertFalse(EmbeddingModelReady)
+        self.assertTrue(
+            any("Embedding model failed" in Error for Error in Errors)
+        )
+
 
 def LoadTests() -> unittest.TestSuite:
     Suite = unittest.TestSuite()
@@ -142,6 +223,15 @@ def LoadTests() -> unittest.TestSuite:
     Suite.addTest(DataPreValidationTests("TestJobFunctionTooLong"))
     Suite.addTest(DataPreValidationTests("TestJobFunctionNotString"))
     Suite.addTest(DataPreValidationTests("TestJobFunctionsListTooMany"))
+    Suite.addTest(
+        DataPreValidationTests("TestPreflightModelsSuccess")
+    )
+    Suite.addTest(
+        DataPreValidationTests("TestPreflightModelsGptFailure")
+    )
+    Suite.addTest(
+        DataPreValidationTests("TestPreflightModelsEmbeddingFailure")
+    )
     return Suite
 
 

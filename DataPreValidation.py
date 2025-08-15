@@ -1,3 +1,5 @@
+import json
+import time
 import pandas as Pandas
 from typing import List, Tuple
 
@@ -98,3 +100,91 @@ def ValidateJobFunctionsList(
 
     IsValid = len(Errors) == 0
     return IsValid, NormalizedJobFunctions, Errors
+
+
+def PreflightModels(
+    GptConfig: dict,
+    EmbeddingModelName: str,
+) -> Tuple[bool, bool, List[str]]:
+    """Verify GPT connectivity and embedding model readiness."""
+
+    Errors: List[str] = []
+    GptReady = False
+    EmbeddingModelReady = False
+
+    if not isinstance(GptConfig, dict):
+        Errors.append("GptConfig must be a dictionary.")
+    else:
+        RequiredKeys = {"ApiKey", "ModelName", "MaxRequestsPerMinute"}
+        MissingKeys = RequiredKeys - set(GptConfig.keys())
+        for Key in MissingKeys:
+            Errors.append(f"Missing GptConfig property: {Key}")
+
+        ApiKey = GptConfig.get("ApiKey")
+        ModelName = GptConfig.get("ModelName")
+        MaxRequests = GptConfig.get("MaxRequestsPerMinute")
+
+        if not isinstance(ApiKey, str):
+            Errors.append("GptConfig.ApiKey must be a string.")
+        if not isinstance(ModelName, str):
+            Errors.append("GptConfig.ModelName must be a string.")
+        if not isinstance(MaxRequests, int) or MaxRequests <= 0:
+            Errors.append(
+                "GptConfig.MaxRequestsPerMinute must be a positive integer."
+            )
+
+    if not isinstance(EmbeddingModelName, str) or (
+        EmbeddingModelName.strip() == ""
+    ):
+        Errors.append("EmbeddingModelName must be a non-empty string.")
+
+    if Errors:
+        return GptReady, EmbeddingModelReady, Errors
+
+    try:
+        import openai
+
+        StartTime = time.time()
+        openai.api_key = ApiKey
+        Response = openai.ChatCompletion.create(
+            model=ModelName,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "Echo the user-provided JSON input.",
+                },
+                {"role": "user", "content": json.dumps({"Ping": "Pong"})},
+            ],
+            temperature=0,
+            max_tokens=50,
+            timeout=5,
+        )
+        Content = Response["choices"][0]["message"]["content"]
+        Data = json.loads(Content)
+        GptReady = Data.get("Ping") == "Pong"
+        Duration = time.time() - StartTime
+        if Duration > 5:
+            Errors.append(
+                "Gpt connectivity test exceeded 5 second warm-up limit."
+            )
+            GptReady = False
+    except Exception as Exc:
+        Errors.append(f"Gpt connectivity failed: {Exc}")
+
+    try:
+        StartTime = time.time()
+        from sentence_transformers import SentenceTransformer
+
+        Model = SentenceTransformer(EmbeddingModelName)
+        _ = Model.encode("Probe String")
+        EmbeddingModelReady = True
+        Duration = time.time() - StartTime
+        if Duration > 5:
+            Errors.append(
+                "Embedding model load exceeded 5 second warm-up limit."
+            )
+            EmbeddingModelReady = False
+    except Exception as Exc:
+        Errors.append(f"Embedding model failed: {Exc}")
+
+    return GptReady, EmbeddingModelReady, Errors
